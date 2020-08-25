@@ -20,36 +20,37 @@ namespace Moneybox.App.Features
             var from = this.accountRepository.GetAccountById(fromAccountId);
             var to = this.accountRepository.GetAccountById(toAccountId);
 
-            var fromBalance = from.Balance - amount;
-            if (fromBalance < 0m)
+            // Check accounts aren't the same
+            if(from.AccountIsDifferentFrom(toAccountId))
             {
-                throw new InvalidOperationException("Insufficient funds to make transfer");
+                // Check sender has enough money
+                if(from.HasFunds(amount))
+                {
+                    // Check receiver has not hit the pay in limit
+                    if (to.IsUnderPayInLimit(amount))
+                    {
+                        // Process transaction
+                        from.GiveMoney(amount);
+                        to.ReceiveMoney(amount);
+                        this.accountRepository.Update(from);
+                        this.accountRepository.Update(to);
+                    }
+                    else
+                    {
+                        throw new InvalidOperationException("The account receiving has reached its pay in limit.");
+                    }
+                }
+                else
+                {
+                    throw new InvalidOperationException("Insufficient funds to make transfer");
+                }
+                // Check if receiver has neared pay in limit
+                if (to.IsNearPayInLimit()) this.notificationService.NotifyApproachingPayInLimit(to.User.Email);
             }
-
-            if (fromBalance < 500m)
+            else
             {
-                this.notificationService.NotifyFundsLow(from.User.Email);
+                throw new InvalidOperationException("The account sending and the account receiving are the same.");
             }
-
-            var paidIn = to.PaidIn + amount;
-            if (paidIn > Account.PayInLimit)
-            {
-                throw new InvalidOperationException("Account pay in limit reached");
-            }
-
-            if (Account.PayInLimit - paidIn < 500m)
-            {
-                this.notificationService.NotifyApproachingPayInLimit(to.User.Email);
-            }
-
-            from.Balance = from.Balance - amount;
-            from.Withdrawn = from.Withdrawn - amount;
-
-            to.Balance = to.Balance + amount;
-            to.PaidIn = to.PaidIn + amount;
-
-            this.accountRepository.Update(from);
-            this.accountRepository.Update(to);
         }
     }
 }
